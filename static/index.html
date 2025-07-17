@@ -24,9 +24,74 @@
 <!-- Шаблон для экрана Игра загружена -->
 <template id="standby">
     <div class="center">
-        <h1>Игра в загадки</h1>
-        <p>Это демонстрационный стенд для проекта на основе socket.io мини-курса по работе с сокетами.</p>
-        <button class="tappable block" onclick="app.run('next')">Начать играть</button>
+        <h1>Вас приветствует АЛКОВИКТОРИНА</h1>
+        <p>Многопользовательская квиз-игра в которой вопросы генерируются случайно с помощью ИИ. Вопросы
+        предполгают числовой ответ. Игроки указавшие наиболее близкое к верному число получают ОЧКО, остальные
+        же должны выпить (ну или любое другое наказание свойственное Вашей компании..) определенное заранее
+            количество алкоголя
+        </p>
+        <button class="tappable block" onclick="app.run('start_game')">Создать игру</button>
+        <button class="tappable block" onclick="app.run('choice_game')">Присоединиться к игре</button>
+    </div>
+</template>
+
+<!-- Новый шаблон для создания комнаты -->
+<template id="create_lobby">
+    <div class="center">
+        <h2>Создание комнаты</h2>
+
+        <div class="form-group">
+            <label>Название комнаты:</label>
+            <input type="text" id="room_name" class="block mb">
+        </div>
+
+        <div class="form-group">
+            <label>Количество вопросов:</label>
+            <input type="number" id="questions_count" class="block mb">
+        </div>
+
+        <div class="form-group">
+            <label>Контекст для вопросов:</label>
+            <input type="text" id="questions_context" class="block mb">
+        </div>
+
+        <button class="tappable block" onclick="app.run('back')">Назад</button>
+        <button id="create_btn" class="tappable block" disabled onclick="app.run('create_room')">Создать</button>
+    </div>
+</template>
+
+<!-- Шаблон для выбора комнаты -->
+<template id="choose_lobby">
+    <div class="center">
+        <h2>Выберите комнату</h2>
+        <div id="rooms_list" class="block mb">
+            <!-- Список комнат будет здесь -->
+        </div>
+        <button class="tappable block" onclick="app.run('back')">Назад</button>
+    </div>
+</template>
+
+<!-- Шаблон лобби (ожидание игроков) -->
+<template id="lobby">
+    <div class="center">
+        <h2>Комната: {{room_name}}</h2>
+        <p>Ожидание игроков...</p>
+
+        <div id="chat" class="block mb" style="height: 200px; overflow-y: scroll;">
+            <!-- Чат будет здесь -->
+        </div>
+
+        <input type="text" id="message" class="block mb">
+        <button class="tappable block" onclick="app.run('send_message')">Отправить</button>
+    </div>
+</template>
+
+<!-- Шаблон ввода имени -->
+<template id="enter_name">
+    <div class="center">
+        <h2>Введите ваше имя</h2>
+        <input type="text" id="player_name" class="block mb" placeholder="Как вас зовут?">
+        <button class="tappable block" onclick="app.run('set_name')">Продолжить</button>
     </div>
 </template>
 

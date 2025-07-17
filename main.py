@@ -1,4 +1,6 @@
-from typing import Optional
+from datetime import datetime
+from fastapi import HTTPException
+from typing import Optional, Dict, List
 
 import socketio
 from loguru import logger
@@ -58,6 +60,71 @@ class Player(BaseModel):
     score: int
 
 
+# Глобальное хранилище комнат (в реальном проекте используйте БД)
+rooms: Dict[str, Dict] = {}
+
+
+class Room(BaseModel):
+    id: str
+    name: str
+    questions_count: int
+    context: str
+    players: List[str]
+    max_players: int = 4
+
+
+# Новые обработчики
+@sio.on("create_room")
+async def create_room(sid, data):
+    room_id = f"room_{len(rooms) + 1}"
+    room = Room(
+        id=room_id,
+        name=data["name"],
+        questions_count=data["questions_count"],
+        context=data["context"],
+        players=[sid],
+    )
+    rooms[room_id] = room.dict()
+    await sio.save_session(sid, {"room_id": room_id, "player_name": data.get('player_name')})
+    await sio.emit("room_created", {"room": room.dict()}, to=sid)
+
+
+@sio.on("get_rooms")
+async def get_rooms(sid):
+    await sio.emit("rooms_list", {"rooms": list(rooms.values())}, to=sid)
+
+
+@sio.on("join_room")
+async def join_room(sid, data):
+    room_id = data["room_id"]
+    if room_id not in rooms:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    room = rooms[room_id]
+    if len(room["players"]) >= room["max_players"]:
+        raise HTTPException(status_code=400, detail="Room is full")
+
+    room["players"].append(sid)
+    await sio.save_session(sid, {"room_id": room_id, "player_name": data.get('player_name')})
+    await sio.emit("room_joined", {"room": room}, to=sid)
+    await sio.emit("player_joined", {"player_id": sid}, room=room_id)
+
+
+@sio.on("send_message")
+async def send_message(sid, data):
+    session = await sio.get_session(sid)
+    room_id = session.get("room_id")
+    if not room_id:
+        return
+
+    message = {
+        "sender": sid[:6],  # Короткий ID для отображения
+        "text": data["text"],
+        "timestamp": datetime.now().isoformat(),
+    }
+    await sio.emit('message_received', {'message': message}, room=room_id)
+
+
 # Обрабатываем подключение пользователя
 @sio.event
 async def connect(sid, environ):
@@ -83,7 +150,7 @@ async def next_event(sid, data):
             await sio.emit('riddle', data={"text": f"{riddle.text}"}, to=sid)
             await sio.save_session(sid, session=session)
     except Exception as e:
-        logger.error(f"Ошибка в next_event:", f'{e}')
+        logger.error("Ошибка в next_event:", f'{e}')
 
 
 # Обрабатываем отправку ответа
