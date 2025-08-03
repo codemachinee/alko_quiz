@@ -1,18 +1,23 @@
 var store = {
-    riddle: null,
-    score: 0,
     rooms: [],
     currentRoom: null,
+    playerName: "",
     messages: [],
-    playerName: "" // Добавляем хранилище для имени
+    roomData: null,
+    joiningRoomId: null
 };
 
 app_pages = {
     standby: {},
+    create_lobby: {},
+    enter_name: {},
+    choose_lobby: {},
+    join_name: {},
+    lobby: {},
     showriddle: {},
     showresult: {},
     disconnected: {}
-}
+};
 
 document.addEventListener('DOMContentLoaded', function () {
 
@@ -20,111 +25,159 @@ document.addEventListener('DOMContentLoaded', function () {
         store: store,
         container: "#app",
         pages: app_pages,
-        url: window.location.host
+        url: window.location.hostname + ":8001"
     });
 
-    // Обработчик для создания игры
+    // ▶️ Кнопка "Создать игру"
     app.addHandler("start_game", () => {
         app.go("create_lobby");
-
-        // Валидация полей формы
-        const inputs = document.querySelectorAll('#create_lobby input');
-        inputs.forEach(input => {
-            input.addEventListener('input', () => {
-                const allFilled = Array.from(inputs).every(i => i.value.trim() !== '');
-                document.getElementById('create_btn').disabled = !allFilled;
-            });
-        });
     });
 
-    // Обработчик для выбора игры
+    // ▶️ Кнопка "Присоединиться к игре"
     app.addHandler("choice_game", () => {
         app.go("choose_lobby");
         app.emit("get_rooms");
     });
 
-    // Новый обработчик для установки имени
-    app.addHandler("set_name", () => {
-        const nameInput = document.getElementById('player_name');
-        if (nameInput.value.trim() === "") {
-            alert("Пожалуйста, введите имя");
+    // 🔙 Кнопка "Назад"
+    app.addHandler("back", () => app.go("standby"));
+
+    // ✅ Обработка кнопки "Создать"
+    app.addHandler("create_room", () => {
+        const name = document.getElementById('room_name').value.trim();
+        const count = document.getElementById('questions_count').value.trim();
+        const context = document.getElementById('questions_context').value.trim();
+        const playerName = document.getElementById('creator_name').value.trim();
+
+        if (!name || !count || !playerName) {
+            alert("Пожалуйста, заполните все обязательные поля.");
             return;
         }
 
-        store.playerName = nameInput.value.trim();
-
-        // Если мы создавали комнату
-        if (store.creatingRoom) {
-            app.emit("create_room", store.roomData);
-        }
-        // Если присоединялись к существующей
-        else if (store.joiningRoomId) {
-            app.emit("join_room", { room_id: store.joiningRoomId });
-        }
-    });
-
-    // Модифицируем обработчик создания комнаты
-    app.addHandler("create_room", () => {
-        store.roomData = {
-            name: document.getElementById('room_name').value,
-            questions_count: document.getElementById('questions_count').value,
-            context: document.getElementById('questions_context').value
+        const roomData = {
+            name: name,
+            questions_count: parseInt(count),
+            context: context,
+            player_name: playerName
         };
-        store.creatingRoom = true;
-        app.go("enter_name"); // Переходим к вводу имени
+
+        store.playerName = playerName;
+        store.roomData = roomData;
+
+        app.emit("create_room", roomData);
     });
 
-    // Модифицируем обработчик выбора комнаты
-    app.on("rooms_list", "#choose_lobby", (data) => {
+    // ✅ Пришёл список комнат
+    app.on("rooms_list", null, (data) => {
+        console.log("📥 Получен список комнат:", data.rooms);
         store.rooms = data.rooms;
-        const roomsList = document.getElementById('rooms_list');
-        roomsList.innerHTML = '';
+        const renderRooms = () => {
+        const list = document.getElementById('rooms_list');
+        if (!list) {
+            return;
+        }
 
-        data.rooms.forEach(room => {
-            const roomElement = document.createElement('div');
-            roomElement.className = 'room-item';
-            roomElement.textContent = `${room.name} (${room.players.length}/${room.max_players})`;
-            roomElement.onclick = () => {
+        console.log("✅ Найден элемент #rooms_list, начинаем отрисовку");
+        list.innerHTML = '';
+
+        if (data.rooms.length === 0) {
+        list.innerHTML = "<p>Нет доступных комнат</p>";
+        return;
+        }
+
+        data.rooms.forEach(function(room) {
+            const div = document.createElement('div');
+            div.className = 'room-item';
+            div.textContent = `${room.name} (${room.players.length} игроков)`;
+
+            div.addEventListener('click', function () {
                 store.joiningRoomId = room.id;
-                store.creatingRoom = false;
-                app.go("enter_name"); // Переходим к вводу имени
-            };
-            roomsList.appendChild(roomElement);
+                app.go("join_name");
+            });
+
+            list.appendChild(div);
+        });
+    };
+
+    renderRooms();
+});
+
+    // ✅ Ввод имени при входе в комнату
+    app.addHandler("join_room", () => {
+        const nameInput = document.getElementById('joiner_name');
+        const playerName = nameInput.value.trim();
+        if (!playerName) {
+            alert("Пожалуйста, введите ваше имя");
+            return;
+        }
+
+        store.playerName = playerName;
+
+        app.emit("join_room", {
+            room_id: store.joiningRoomId,
+            player_name: playerName
         });
     });
 
+    // ✅ Комната успешно создана → переходим в лобби
+    app.on("room_created", null, (data) => {
+        store.currentRoom = data.room;
+        app.go("lobby");
+    });
 
-    app.addHandler("next", () => {
-        app.emit("next")
-    })
+    // ✅ Успешно вошли в комнату → переходим в лобби
+    app.on("room_joined", null, (data) => {
+        store.currentRoom = data.room;
+        app.go("lobby");
+    });
 
-    app.addHandler("answer", () => {
-        user_answer = document.querySelector("textarea#answer").value
-        app.emit("answer", {text: user_answer})
-    })
+    // ✅ Обновлён список игроков в лобби
+    app.on("update_players", (data) => {
+        store.currentRoom.players = data.players;
+        app.render("#lobby");
+    });
 
-    // Получена загадка с сервера
+    // ✅ Отправка сообщения в чат
+    app.addHandler("send_message", () => {
+        const text = document.getElementById('message').value.trim();
+        if (!text) return;
+
+        app.emit("send_message", { text: text });
+        document.getElementById('message').value = "";
+    });
+
+    // ✅ Пришло сообщение в чат
+    app.on("new_message", (data) => {
+        const chat = document.getElementById('chat');
+        if (!chat) return;
+
+        const msg = document.createElement('div');
+        msg.className = 'message';
+        msg.textContent = `${data.sender}: ${data.text}`;
+        chat.appendChild(msg);
+        chat.scrollTop = chat.scrollHeight;
+    });
+
+    // 🔹 Остальные игровые события пока не трогаем
     app.on("riddle", "#showriddle", (data) => {
-        console.log(data)
-        app.store.riddle = data
-    })
+        console.log("Получена загадка", data);
+        app.store.riddle = data;
+    });
 
-    // Получен ответ с сервера
     app.on("result", "#showanswer", (data) => {
-        console.log(data)
-        app.store.riddle = data
-    })
+        console.log("Результат", data);
+        app.store.riddle = data;
+    });
 
-    // Получен сигнал "обновлен счет" с сервера
     app.on("score", null, (data) => {
-        console.log(data)
-        app.store.score = data.value
-    })
+        console.log("Счёт обновлён", data);
+        app.store.score = data.value;
+    });
 
-    // Получен сигнал "Игра завершена"
     app.on("over", "#over", (data) => {
-        console.log(data)
-    })
+        console.log("Игра завершена", data);
+    });
 
+    // ▶️ Первый экран — главное меню
     app.go("standby");
-})
+});

@@ -3,99 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Riddle demo</title>
+    <title>Алковикторина</title>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/handlebars@latest/dist/handlebars.js"></script>
     <script src="static/lariska.js"></script>
     <script src="static/script.js"></script>
     <link rel="stylesheet" type="text/css" href="static/style.css"/>
-
 </head>
 <body>
 
 <main>
     <div class="container">
         <section class="screen active card" id="app">
-            Загружаем
+            Загружаем...
         </section>
     </div>
 </main>
 
-<!-- Шаблон для экрана Игра загружена -->
+<!-- Главное меню -->
 <template id="standby">
     <div class="center">
-        <h1>Вас приветствует АЛКОВИКТОРИНА</h1>
-        <p>Многопользовательская квиз-игра в которой вопросы генерируются случайно с помощью ИИ. Вопросы
-        предполгают числовой ответ. Игроки указавшие наиболее близкое к верному число получают ОЧКО, остальные
-        же должны выпить (ну или любое другое наказание свойственное Вашей компании..) определенное заранее
-            количество алкоголя
-        </p>
-        <button class="tappable block" onclick="app.run('start_game')">Создать игру</button>
-        <button class="tappable block" onclick="app.run('choice_game')">Присоединиться к игре</button>
+        <h1>АЛКОВИКТОРИНА</h1>
+        <div class="button-container">
+            <button class="tappable block" onclick="app.run('start_game')">Создать игру</button>
+            <button class="tappable block" onclick="app.run('choice_game')">Присоединиться к игре</button>
+        </div>
     </div>
 </template>
 
-<!-- Новый шаблон для создания комнаты -->
+<!-- Форма создания комнаты -->
 <template id="create_lobby">
     <div class="center">
         <h2>Создание комнаты</h2>
-
-        <div class="form-group">
-            <label>Название комнаты:</label>
-            <input type="text" id="room_name" class="block mb">
+        <input type="text" id="room_name" class="block mb" placeholder="Название комнаты" required>
+        <input type="number" id="questions_count" class="block mb" placeholder="Количество вопросов" min="1" required>
+        <input type="text" id="questions_context" class="block mb" placeholder="Тематика вопросов" required>
+        <input type="text" id="creator_name" class="block mb" placeholder="Ваше имя" required>
+        <div class="button-container">
+            <button class="tappable block" onclick="app.run('back')">Назад</button>
+            <button class="tappable block" onclick="app.run('create_room')">Создать</button>
         </div>
-
-        <div class="form-group">
-            <label>Количество вопросов:</label>
-            <input type="number" id="questions_count" class="block mb">
-        </div>
-
-        <div class="form-group">
-            <label>Контекст для вопросов:</label>
-            <input type="text" id="questions_context" class="block mb">
-        </div>
-
-        <button class="tappable block" onclick="app.run('back')">Назад</button>
-        <button id="create_btn" class="tappable block" disabled onclick="app.run('create_room')">Создать</button>
     </div>
 </template>
 
-<!-- Шаблон для выбора комнаты -->
+<!-- Форма выбора комнаты -->
 <template id="choose_lobby">
     <div class="center">
         <h2>Выберите комнату</h2>
-        <div id="rooms_list" class="block mb">
-            <!-- Список комнат будет здесь -->
-        </div>
+        <div id="rooms_list" class="block mb"></div>
         <button class="tappable block" onclick="app.run('back')">Назад</button>
     </div>
 </template>
 
-<!-- Шаблон лобби (ожидание игроков) -->
+<!-- Форма ввода имени для присоединения -->
+<template id="join_name">
+    <div class="center">
+        <h2>Введите ваше имя</h2>
+        <input type="text" id="joiner_name" class="block mb" placeholder="Как вас зовут?" required>
+        <button class="tappable block" onclick="app.run('join_room')">Продолжить</button>
+    </div>
+</template>
+
+<!-- Лобби (ожидание игроков) -->
 <template id="lobby">
     <div class="center">
-        <h2>Комната: {{room_name}}</h2>
-        <p>Ожидание игроков...</p>
-
-        <div id="chat" class="block mb" style="height: 200px; overflow-y: scroll;">
-            <!-- Чат будет здесь -->
+        <h2>Комната: {{currentRoom.name}}</h2>
+        <div id="players_list" class="block mb">
+            <strong>Игроки:</strong>
+            <ul>
+                {{#each currentRoom.players}}
+                    <li>{{this.name}}</li>
+                {{/each}}
+            </ul>
         </div>
-
-        <input type="text" id="message" class="block mb">
+        <div id="chat" class="block mb" style="height: 200px; overflow-y: scroll;"></div>
+        <input type="text" id="message" class="block mb" placeholder="Ваше сообщение">
         <button class="tappable block" onclick="app.run('send_message')">Отправить</button>
     </div>
 </template>
 
-<!-- Шаблон ввода имени -->
-<template id="enter_name">
-    <div class="center">
-        <h2>Введите ваше имя</h2>
-        <input type="text" id="player_name" class="block mb" placeholder="Как вас зовут?">
-        <button class="tappable block" onclick="app.run('set_name')">Продолжить</button>
-    </div>
-</template>
-
-<!-- Шаблон для экрана Показа задачки -->
+<!-- Игровые экраны -->
 <template id="showriddle">
     <p class="alert">Ваш счет: {{score}}</p>
     <p>Загадка {{riddle.number}}</p>
@@ -107,7 +94,6 @@
     <button class="tappable block" onclick="app.run('answer')">Ответить</button>
 </template>
 
-<!-- Шаблон для экрана Показа ответа -->
 <template id="showanswer">
     <p class="alert">Ваш счет: {{score}}</p>
     <p>Загадка {{riddle.number}}</p>
@@ -119,11 +105,10 @@
     <button class="tappable block" onclick="app.run('next')">Следующий вопрос</button>
 </template>
 
-<!--Шаблон для экрана Игра завершена-->
 <template id="over">
     <p class="alert">Ваш счет: {{score}}</p>
     <h1>Игра завершена</h1>
-    <button class="tappable block" onclick="app.go('standby');">Начать сначала</button>
+    <button class="tappable block" onclick="app.go('standby')">Начать сначала</button>
 </template>
 
 </body>
