@@ -131,12 +131,6 @@ document.addEventListener('DOMContentLoaded', function () {
         app.go("lobby");
     });
 
-    // ✅ Обновлён список игроков в лобби
-    app.on("update_players", (data) => {
-        store.currentRoom.players = data.players;
-        app.render("#lobby");
-    });
-
     // ✅ Отправка сообщения в чат
     app.addHandler("send_message", () => {
         const text = document.getElementById('message').value.trim();
@@ -147,7 +141,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ✅ Пришло сообщение в чат
-    app.on("new_message", (data) => {
+    app.on("new_message", null, (data) => {
         const chat = document.getElementById('chat');
         if (!chat) return;
 
@@ -156,6 +150,21 @@ document.addEventListener('DOMContentLoaded', function () {
         msg.textContent = `${data.sender}: ${data.text}`;
         chat.appendChild(msg);
         chat.scrollTop = chat.scrollHeight;
+    });
+
+    // ✅ Обновление списка игроков в лобби
+    app.on("update_players", null, (data) => {
+        store.currentRoom.players = data.players;
+        app.render("#lobby");
+    });
+
+    // ✅ Уведомление о том, что лобби удалено
+    app.on("lobby_deleted", null, (data) => {
+        alert("Лобби было удалено создателем. Возвращаемся в главное меню.");
+        store.currentRoom = null;
+        store.roomData = null;
+        store.playerName = "";
+        app.go("standby");
     });
 
     // ✅ Обработчик для кнопки "Покинуть комнату"
@@ -170,12 +179,12 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // 🔹 Остальные игровые события пока не трогаем
-    app.on("riddle", "#showriddle", (data) => {
+    app.on("riddle", "#showriddle", null, (data) => {
         console.log("Получена загадка", data);
         app.store.riddle = data;
     });
 
-    app.on("result", "#showanswer", (data) => {
+    app.on("result", "#showanswer", null, (data) => {
         console.log("Результат", data);
         app.store.riddle = data;
     });
@@ -185,7 +194,7 @@ document.addEventListener('DOMContentLoaded', function () {
         app.store.score = data.value;
     });
 
-    app.on("over", "#over", (data) => {
+    app.on("over", "#over", null, (data) => {
         console.log("Игра завершена", data);
     });
 

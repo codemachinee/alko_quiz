@@ -28,6 +28,12 @@ function Lariska({store, container, pages, url}) {
   };
 
   this.render = function(template, container=null) {
+    // Проверяем, что template является строкой
+    if (typeof template !== 'string') {
+      console.error(`Template must be a string, got: ${typeof template}`, template);
+      return;
+    }
+    
     let data = this.store;
     if (!container) {container = this.container}
 
@@ -100,9 +106,22 @@ function Lariska({store, container, pages, url}) {
         console.log(`Socket event ${event} received`)
         console.log(data)
 
-         if (callback) { callback(data) }
-         if (frame) {
+         // Сначала выполняем callback если он есть
+         if (callback && typeof callback === 'function') { 
+           try {
+             callback(data) 
+           } catch (error) {
+             console.error(`Error in callback for event ${event}:`, error)
+           }
+         }
+         
+         // Затем рендерим frame если он указан как строка
+         if (frame && typeof frame === 'string') {
+           try {
              this.render(frame, container)
+           } catch (error) {
+             console.error(`Error rendering frame ${frame}:`, error)
+           }
          }
       })
    }

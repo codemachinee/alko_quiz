@@ -52,19 +52,33 @@ class Room(BaseModel):
 @sio.event
 async def connect(sid, environ):
     await sio.save_session(sid, {"connected_at": datetime.now().isoformat()})
-    players[sid] = {"sid": sid, "name": None}
+    players[sid] = {"sid": sid, "name": None, "room_id": None}
 
 
 @sio.event
 async def disconnect(sid):
     if sid in players:
         player = players[sid]
-        if "room_id" in player:
+        if "room_id" in player and player["room_id"]:
             room_id = player["room_id"]
             if room_id in rooms:
+                # Удаляем игрока из комнаты
                 rooms[room_id]["players"] = [
                     p for p in rooms[room_id]["players"] if p["sid"] != sid
                 ]
+                
+                # Отправляем уведомление в чат о выходе игрока
+                await sio.emit(
+                    "new_message",
+                    {
+                        "sender": "Система",
+                        "text": f"Игрок {player.get('name', 'Неизвестный')} покинул комнату",
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                    room=room_id,
+                )
+                
+                # Если комната пуста, удаляем её
                 if len(rooms[room_id]["players"]) == 0:
                     del rooms[room_id]
                     await sio.emit(
@@ -83,6 +97,7 @@ async def disconnect(sid):
                         },
                     )
                 else:
+                    # Обновляем список игроков для оставшихся
                     await sio.emit(
                         "update_players",
                         {"players": rooms[room_id]["players"]},
@@ -110,14 +125,24 @@ async def handle_create_room(sid, data):
         print(rooms)
         players[sid] = player.model_dump()
         print(players)
-        await sio.enter_room(sid, data["name"])
+        
+        # Входим в комнату Socket.IO
+        await sio.enter_room(sid, room_id)
         print(f"группы пользователя: {sio.rooms(sid)}")
-        # await handle_join_room(sid, {"room_id": room_id, "player_name": data["player_name"]})
-        # players[sid]["name"] = data["player_name"]
-        # players[sid]["room_id"] = room_id
 
         await sio.save_session(
             sid, {"room_id": room_id, "player_name": data["player_name"]}
+        )
+
+        # Отправляем уведомление о создании комнаты
+        await sio.emit(
+            "new_message",
+            {
+                "sender": "Система",
+                "text": f"Комната '{data['name']}' создана игроком {data['player_name']}",
+                "timestamp": datetime.now().isoformat(),
+            },
+            room=room_id,
         )
 
         await sio.emit("room_created", {"room": room.model_dump()}, to=sid)
@@ -177,8 +202,22 @@ async def handle_join_room(sid, data):
         players[sid]["name"] = data["player_name"]
         players[sid]["room_id"] = data["room_id"]
 
+        # Входим в комнату Socket.IO
+        await sio.enter_room(sid, data["room_id"])
+
         await sio.save_session(
             sid, {"room_id": data["room_id"], "player_name": data["player_name"]}
+        )
+
+        # Отправляем уведомление о присоединении игрока
+        await sio.emit(
+            "new_message",
+            {
+                "sender": "Система",
+                "text": f"Игрок {data['player_name']} присоединился к комнате",
+                "timestamp": datetime.now().isoformat(),
+            },
+            room=data["room_id"],
         )
 
         await sio.emit("update_players", {"players": room["players"]}, room=data["room_id"])
@@ -197,6 +236,9 @@ async def handle_send_message(sid, data):
     if "room_id" not in session:
         return
 
+    room_id = session["room_id"]
+    
+    # Отправляем сообщение в комнату
     await sio.emit(
         "new_message",
         {
@@ -204,7 +246,7 @@ async def handle_send_message(sid, data):
             "text": data["text"],
             "timestamp": datetime.now().isoformat(),
         },
-        room=session["room_id"],
+        room=room_id,
     )
 
 # Обработка выхода из комнаты
@@ -213,14 +255,33 @@ async def handle_leave_room(sid, data):
     try:
         room_id = data.get("room_id")
         if room_id and room_id in rooms:
+            room = rooms[room_id]
+            player = players.get(sid, {})
+            player_name = player.get("name", "Неизвестный")
+            is_creator = False
+            
+            # Проверяем, является ли игрок создателем комнаты
+            if room["players"] and room["players"][0]["sid"] == sid:
+                is_creator = True
+            
             # Удаляем игрока из комнаты
-            rooms[room_id]["players"] = [
-                p for p in rooms[room_id]["players"] if p["sid"] != sid
+            room["players"] = [
+                p for p in room["players"] if p["sid"] != sid
             ]
             
-            # Если комната пуста, удаляем её
-            if len(rooms[room_id]["players"]) == 0:
+            # Если это создатель комнаты, удаляем всю комнату
+            if is_creator:
+                # Уведомляем всех игроков о том, что лобби удалено
+                await sio.emit(
+                    "lobby_deleted",
+                    {"message": "Создатель лобби покинул комнату. Лобби удалено."},
+                    room=room_id,
+                )
+                
+                # Удаляем комнату
                 del rooms[room_id]
+                
+                # Обновляем общий список комнат
                 await sio.emit(
                     "rooms_list",
                     {
@@ -237,10 +298,21 @@ async def handle_leave_room(sid, data):
                     },
                 )
             else:
+                # Если это обычный игрок, отправляем уведомление о выходе
+                await sio.emit(
+                    "new_message",
+                    {
+                        "sender": "Система",
+                        "text": f"Игрок {player_name} покинул комнату",
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                    room=room_id,
+                )
+                
                 # Обновляем список игроков для оставшихся
                 await sio.emit(
                     "update_players",
-                    {"players": rooms[room_id]["players"]},
+                    {"players": room["players"]},
                     room=room_id,
                 )
             
@@ -249,6 +321,7 @@ async def handle_leave_room(sid, data):
                 players[sid]["room_id"] = None
                 players[sid]["name"] = None
             
+            # Выходим из комнаты Socket.IO
             await sio.leave_room(sid, room_id)
             
     except Exception as e:
