@@ -1,12 +1,29 @@
 from datetime import datetime
 from typing import Dict, List, Optional
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 import socketio
 from pydantic import BaseModel, field_validator
 import uvicorn
 
 # Настройка сервера
 app = FastAPI()
+
+# Middleware для добавления CSP заголовков
+@app.middleware("http")
+async def add_csp_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'nonce-handlebars-check' https://cdn.socket.io https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' https:; "
+        "connect-src 'self' ws: wss:; "
+        "frame-src 'self';"
+    )
+    return response
+
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 socket_app = socketio.ASGIApp(
     sio, app, static_files={"/": "static/index.html", "/static": "./static"}
@@ -189,6 +206,53 @@ async def handle_send_message(sid, data):
         },
         room=session["room_id"],
     )
+
+# Обработка выхода из комнаты
+@sio.on("leave_room")
+async def handle_leave_room(sid, data):
+    try:
+        room_id = data.get("room_id")
+        if room_id and room_id in rooms:
+            # Удаляем игрока из комнаты
+            rooms[room_id]["players"] = [
+                p for p in rooms[room_id]["players"] if p["sid"] != sid
+            ]
+            
+            # Если комната пуста, удаляем её
+            if len(rooms[room_id]["players"]) == 0:
+                del rooms[room_id]
+                await sio.emit(
+                    "rooms_list",
+                    {
+                        "rooms": [
+                            {
+                                "id": r["id"],
+                                "name": r["name"],
+                                "context": r["context"],
+                                "players": r["players"],
+                                "created_at": r["created_at"],
+                            }
+                            for r in rooms.values()
+                        ]
+                    },
+                )
+            else:
+                # Обновляем список игроков для оставшихся
+                await sio.emit(
+                    "update_players",
+                    {"players": rooms[room_id]["players"]},
+                    room=room_id,
+                )
+            
+            # Очищаем данные игрока
+            if sid in players:
+                players[sid]["room_id"] = None
+                players[sid]["name"] = None
+            
+            await sio.leave_room(sid, room_id)
+            
+    except Exception as e:
+        print(f"Ошибка при выходе из комнаты: {e}")
 
 if __name__ == '__main__':
     uvicorn.run(socket_app, host='0.0.0.0', port=8001)

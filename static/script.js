@@ -158,6 +158,17 @@ document.addEventListener('DOMContentLoaded', function () {
         chat.scrollTop = chat.scrollHeight;
     });
 
+    // ✅ Обработчик для кнопки "Покинуть комнату"
+    app.addHandler("leave_room", () => {
+        if (store.currentRoom) {
+            app.emit("leave_room", { room_id: store.currentRoom.id });
+            store.currentRoom = null;
+            store.roomData = null;
+            store.playerName = "";
+        }
+        app.go("standby");
+    });
+
     // 🔹 Остальные игровые события пока не трогаем
     app.on("riddle", "#showriddle", (data) => {
         console.log("Получена загадка", data);

@@ -16,49 +16,55 @@ function Lariska({store, container, pages, url}) {
   this.url = url
   this.socket = io.connect(this.url, {transports: ['websocket', 'polling']});
 
+  // Добавляем делегирование событий для data-action
+  this.setupEventDelegation = function() {
+    document.addEventListener('click', (event) => {
+      const action = event.target.getAttribute('data-action');
+      if (action && this.handlers[action]) {
+        event.preventDefault();
+        this.run(action, event);
+      }
+    });
+  };
+
   this.render = function(template, container=null) {
+    let data = this.store;
+    if (!container) {container = this.container}
 
-          data = this.store
-          if (!container) {container = this.container}
+    console.log(`Rendering template ${template} to ${container}`)
 
-          console.log(`Rendering template ${template}  to ${container}`)
+    try {
+      const templateElement = document.querySelector(template);
 
-          try {
-            const templateElement = document.querySelector(template);
+      if (!templateElement) {
+        throw new Error(`Template element ${template} not found`);
+      }
 
-            if (!templateElement) {
-              throw new Error(`Template element ${template} not found`);
-            }
+      const outputElement = document.querySelector(container);
 
+      if (!outputElement) {
+        throw new Error('No element to put page into ');
+      }
 
-            const outputElement = document.querySelector(container);
+      var templateText = templateElement.innerHTML;
+      var compiledTemplate = Handlebars.compile(templateText);
+      var renderedHTML = compiledTemplate(data);
 
-            if (!outputElement) {
-              throw new Error('No element to put page into ');
-            }
+      outputElement.innerHTML = renderedHTML;
 
-            var templateText = templateElement.innerHTML;
-            var template = Handlebars.compile(templateText);
-            var renderedHTML = template(data);
-
-            outputElement.innerHTML = renderedHTML;
-
-          } catch (error) {
-            console.error(error);
-          }
+    } catch (error) {
+      console.error(error);
     }
-
+  }
 
   this.go = function (state) {
-
     if (this.pages[state]) {
-      this.render("#"+state, this.container, this.store);
+      this.render("#"+state, this.container);
     } else {
       console.error(`State ${state} not found`);
     }
     this.state = state
   };
-
 
   this.payload = []
   this.addPayload = function(key){
@@ -81,20 +87,16 @@ function Lariska({store, container, pages, url}) {
    }
 
    this.run = function(name, data) {
-
        if (typeof this.handlers[name] !== 'function') {
           throw new Error(`Handler with name ${name} doesn't exist.`);
       }
 
        console.log(`Handler ${name} running`)
-       func = this.handlers[name](data)
+       return this.handlers[name](data)
    }
 
    this.on = function(event, frame=null, callback=null, container=null){
-
-
       this.socket.on(event, (data) => {
-
         console.log(`Socket event ${event} received`)
         console.log(data)
 
@@ -104,4 +106,7 @@ function Lariska({store, container, pages, url}) {
          }
       })
    }
+
+   // Инициализируем делегирование событий при создании экземпляра
+   this.setupEventDelegation();
 }
