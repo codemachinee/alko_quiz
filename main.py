@@ -45,6 +45,7 @@ class Room(BaseModel):
     questions_count: int
     context: str
     players: List[Player]
+    messages: List[Dict] = []
     created_at: str = datetime.now().isoformat()
 
 
@@ -119,6 +120,7 @@ async def handle_create_room(sid, data):
             questions_count=data["questions_count"],
             context=data["context"],
             players=[player],
+            messages=[],
         )
 
         rooms[room_id] = room.model_dump()
@@ -223,6 +225,9 @@ async def handle_join_room(sid, data):
         await sio.emit("update_players", {"players": room["players"]}, room=data["room_id"])
         await sio.emit("room_joined", {"room": room}, to=sid)
 
+        # 👇 Отправляем историю сообщений новому игроку
+        await sio.emit("chat_history", {"messages": room["messages"]}, to=sid)
+
     except Exception as e:
         await sio.emit(
             "join_error", {"message": f"Ошибка присоединения: {str(e)}"}, to=sid
@@ -236,16 +241,22 @@ async def handle_send_message(sid, data):
     if "room_id" not in session:
         return
 
+    message = {
+        "sender": session["player_name"],
+        "text": data["text"],
+        "timestamp": datetime.now().isoformat(),
+    }
+
+    # 👇 сохраняем в истории комнаты
     room_id = session["room_id"]
+    if room_id in rooms:
+        rooms[room_id]["messages"].append(message)
+
     
     # Отправляем сообщение в комнату
     await sio.emit(
         "new_message",
-        {
-            "sender": session["player_name"],
-            "text": data["text"],
-            "timestamp": datetime.now().isoformat(),
-        },
+        message,
         room=room_id,
     )
 

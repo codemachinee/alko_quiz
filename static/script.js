@@ -122,13 +122,16 @@ document.addEventListener('DOMContentLoaded', function () {
     // ✅ Комната успешно создана → переходим в лобби
     app.on("room_created", null, (data) => {
         store.currentRoom = data.room;
+        store.messages = [];  // новый чат
         app.go("lobby");
+        renderChat(); // чат сразу отрисуем
     });
 
     // ✅ Успешно вошли в комнату → переходим в лобби
     app.on("room_joined", null, (data) => {
         store.currentRoom = data.room;
         app.go("lobby");
+        setTimeout(renderChat, 50);
     });
 
     // ✅ Отправка сообщения в чат
@@ -141,21 +144,21 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ✅ Пришло сообщение в чат
-    app.on("new_message", null, (data) => {
-        const chat = document.getElementById('chat');
-        if (!chat) return;
+    app.on("new_message", (data) => {
+        store.messages.push(data);  // 👈 копим
+        renderChat();
+    });
 
-        const msg = document.createElement('div');
-        msg.className = 'message';
-        msg.textContent = `${data.sender}: ${data.text}`;
-        chat.appendChild(msg);
-        chat.scrollTop = chat.scrollHeight;
+    app.on("chat_history", (data) => {
+        store.messages = data.messages || [];
+        renderChat();
     });
 
     // ✅ Обновление списка игроков в лобби
     app.on("update_players", null, (data) => {
         store.currentRoom.players = data.players;
         app.render("#lobby");
+        renderChat();
     });
 
     // ✅ Уведомление о том, что лобби удалено
@@ -175,6 +178,15 @@ document.addEventListener('DOMContentLoaded', function () {
             store.roomData = null;
             store.playerName = "";
         }
+        app.go("standby");
+    });
+
+    // ✅ Обработчик события "join_error"
+    app.on("join_error", (data) => {
+        alert(data['message']);
+        store.currentRoom = null;
+        store.roomData = null;
+        store.playerName = "";
         app.go("standby");
     });
 
@@ -198,6 +210,30 @@ document.addEventListener('DOMContentLoaded', function () {
         console.log("Игра завершена", data);
     });
 
+    function renderChat() {
+        const chat = document.getElementById('chat');
+        if (!chat) {
+            // Chat элемент ещё не в DOM (пользователь не на лобби) — не ломаем ничего
+            // Сообщения остаются в store.messages и отрисуются при заходе в лобби
+            return;
+        }
+        chat.innerHTML = '';
+        store.messages.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = 'message';
+            // подсветка системных сообщений
+            if (msg.sender === "Система") {
+                div.style.color = "gray";
+                div.style.fontStyle = "italic";
+            }
+            const time = msg.timestamp ? ` [${(new Date(msg.timestamp)).toLocaleTimeString()}]` : '';
+            div.textContent = `${msg.sender}:${time} ${msg.text}`;
+            chat.appendChild(div);
+        });
+        chat.scrollTop = chat.scrollHeight;
+    }
+
     // ▶️ Первый экран — главное меню
     app.go("standby");
+
 });
