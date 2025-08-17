@@ -122,16 +122,31 @@ document.addEventListener('DOMContentLoaded', function () {
     // ✅ Комната успешно создана → переходим в лобби
     app.on("room_created", null, (data) => {
         store.currentRoom = data.room;
-        store.messages = [];  // новый чат
+        // Инициализируем сообщения из комнаты, если они есть
+        store.messages = data.room.messages || [];
+        console.log("Создана комната, сообщения:", store.messages);
+        
         app.go("lobby");
-        renderChat(); // чат сразу отрисуем
+        // Ждем полной загрузки DOM перед рендерингом чата
+        setTimeout(() => {
+            console.log("Рендерим чат после создания комнаты");
+            renderChat();
+        }, 200);
     });
 
     // ✅ Успешно вошли в комнату → переходим в лобби
     app.on("room_joined", null, (data) => {
         store.currentRoom = data.room;
+        // Инициализируем сообщения из комнаты, если они есть
+        store.messages = data.room.messages || [];
+        console.log("Присоединились к комнате, сообщения:", store.messages);
+        
         app.go("lobby");
-        setTimeout(renderChat, 50);
+        // Ждем полной загрузки DOM перед рендерингом чата
+        setTimeout(() => {
+            console.log("Рендерим чат после присоединения к комнате");
+            renderChat();
+        }, 200);
     });
 
     // ✅ Отправка сообщения в чат
@@ -139,25 +154,60 @@ document.addEventListener('DOMContentLoaded', function () {
         const text = document.getElementById('message').value.trim();
         if (!text) return;
 
+        console.log("📤 Отправляем сообщение:", text);
+        console.log("Текущее состояние:", app.state);
+        console.log("Текущая комната:", store.currentRoom);
+        
         app.emit("send_message", { text: text });
         document.getElementById('message').value = "";
     });
 
     // ✅ Пришло сообщение в чат
     app.on("new_message", (data) => {
+        console.log("📨 Получено новое сообщение:", data);
+        
+        // Проверяем структуру сообщения
+        if (!data.sender || !data.text) {
+            console.error("❌ Некорректная структура сообщения:", data);
+            return;
+        }
+        
         store.messages.push(data);  // 👈 копим
-        renderChat();
+        console.log("📚 Всего сообщений в store:", store.messages.length);
+        
+        // Проверяем, что мы находимся в лобби
+        if (app.state === 'lobby') {
+            console.log("Мы в лобби, обновляем чат");
+            // Принудительно обновляем чат
+            setTimeout(() => {
+                renderChat();
+            }, 50);
+        } else {
+            console.log("Мы не в лобби, состояние:", app.state);
+        }
     });
 
     app.on("chat_history", (data) => {
+        console.log("📚 Получена история чата:", data);
         store.messages = data.messages || [];
+        console.log("📚 Загружено сообщений в store:", store.messages.length);
         renderChat();
     });
 
     // ✅ Обновление списка игроков в лобби
     app.on("update_players", null, (data) => {
         store.currentRoom.players = data.players;
-        app.render("#lobby");
+        // Обновляем только список игроков, не весь экран
+        const playersList = document.getElementById('players_list');
+        if (playersList) {
+            playersList.innerHTML = `
+                <strong>Игроки:</strong>
+                <ul>
+                    ${data.players.map(player => `<li>${player.name}</li>`).join('')}
+                </ul>
+            `;
+        }
+        // Перерендериваем чат для отображения новых сообщений
         renderChat();
     });
 
@@ -182,8 +232,8 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ✅ Обработчик события "join_error"
-    app.on("join_error", (data) => {
-        alert(data['message']);
+    app.on("join_error", null, (data) => {
+        alert(data.message);
         store.currentRoom = null;
         store.roomData = null;
         store.playerName = "";
@@ -211,26 +261,56 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     function renderChat() {
-        const chat = document.getElementById('chat');
-        if (!chat) {
-            // Chat элемент ещё не в DOM (пользователь не на лобби) — не ломаем ничего
-            // Сообщения остаются в store.messages и отрисуются при заходе в лобби
-            return;
-        }
-        chat.innerHTML = '';
-        store.messages.forEach(msg => {
-            const div = document.createElement('div');
-            div.className = 'message';
-            // подсветка системных сообщений
-            if (msg.sender === "Система") {
-                div.style.color = "gray";
-                div.style.fontStyle = "italic";
+        try {
+            const chat = document.getElementById('chat');
+            if (!chat) {
+                console.log("Chat элемент не найден, возможно пользователь не в лобби");
+                return;
             }
-            const time = msg.timestamp ? ` [${(new Date(msg.timestamp)).toLocaleTimeString()}]` : '';
-            div.textContent = `${msg.sender}:${time} ${msg.text}`;
-            chat.appendChild(div);
-        });
-        chat.scrollTop = chat.scrollHeight;
+            
+            console.log("Рендерим чат с сообщениями:", store.messages);
+            console.log("Chat элемент найден:", chat);
+            
+            // Очищаем чат
+            chat.innerHTML = '';
+            
+            if (!store.messages || store.messages.length === 0) {
+                chat.innerHTML = '<div class="message" style="color: gray; font-style: italic;">Нет сообщений</div>';
+                return;
+            }
+            
+            // Добавляем каждое сообщение
+            store.messages.forEach((msg, index) => {
+                try {
+                    const div = document.createElement('div');
+                    div.className = 'message';
+                    div.style.marginBottom = '5px';
+                    div.style.padding = '5px';
+                    div.style.borderBottom = '1px solid #eee';
+                    
+                    // подсветка системных сообщений
+                    if (msg.sender === "Система") {
+                        div.style.color = "gray";
+                        div.style.fontStyle = "italic";
+                        div.style.backgroundColor = "#f5f5f5";
+                    }
+                    
+                    const time = msg.timestamp ? ` [${(new Date(msg.timestamp)).toLocaleTimeString()}]` : '';
+                    div.textContent = `${msg.sender}:${time} ${msg.text}`;
+                    
+                    chat.appendChild(div);
+                    console.log(`Добавлено сообщение ${index + 1}:`, msg);
+                } catch (error) {
+                    console.error(`Ошибка при добавлении сообщения ${index}:`, error, msg);
+                }
+            });
+            
+            // Прокручиваем к последнему сообщению
+            chat.scrollTop = chat.scrollHeight;
+            console.log("Чат обновлен, всего сообщений отображено:", store.messages.length);
+        } catch (error) {
+            console.error("Ошибка в функции renderChat:", error);
+        }
     }
 
     // ▶️ Первый экран — главное меню

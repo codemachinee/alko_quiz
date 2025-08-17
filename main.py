@@ -137,15 +137,21 @@ async def handle_create_room(sid, data):
         )
 
         # Отправляем уведомление о создании комнаты
+        system_message = {
+            "sender": "Система",
+            "text": f"Комната '{data['name']}' создана игроком {data['player_name']}",
+            "timestamp": datetime.now().isoformat(),
+        }
+        rooms[room_id]["messages"].append(system_message)
+        print(f"💬 Системное сообщение добавлено в историю: {system_message}")
+        
+        # Отправляем системное сообщение в комнату (теперь пользователь уже в комнате)
         await sio.emit(
             "new_message",
-            {
-                "sender": "Система",
-                "text": f"Комната '{data['name']}' создана игроком {data['player_name']}",
-                "timestamp": datetime.now().isoformat(),
-            },
+            system_message,
             room=room_id,
         )
+        print(f"📤 Системное сообщение отправлено в комнату {room_id}")
 
         await sio.emit("room_created", {"room": room.model_dump()}, to=sid)
         await sio.emit(
@@ -212,15 +218,21 @@ async def handle_join_room(sid, data):
         )
 
         # Отправляем уведомление о присоединении игрока
+        system_message = {
+            "sender": "Система",
+            "text": f"Игрок {data['player_name']} присоединился к комнате",
+            "timestamp": datetime.now().isoformat(),
+        }
+        room["messages"].append(system_message)
+        print(f"💬 Системное сообщение о присоединении добавлено в историю: {system_message}")
+        
+        # Отправляем системное сообщение в комнату (теперь пользователь уже в комнате)
         await sio.emit(
             "new_message",
-            {
-                "sender": "Система",
-                "text": f"Игрок {data['player_name']} присоединился к комнате",
-                "timestamp": datetime.now().isoformat(),
-            },
+            system_message,
             room=data["room_id"],
         )
+        print(f"📤 Системное сообщение о присоединении отправлено в комнату {data['room_id']}")
 
         await sio.emit("update_players", {"players": room["players"]}, room=data["room_id"])
         await sio.emit("room_joined", {"room": room}, to=sid)
@@ -237,8 +249,13 @@ async def handle_join_room(sid, data):
 # Чат
 @sio.on("send_message")
 async def handle_send_message(sid, data):
+    print(f"📨 Получено сообщение от {sid}: {data}")
+    
     session = await sio.get_session(sid)
+    print(f"📋 Сессия пользователя {sid}: {session}")
+    
     if "room_id" not in session:
+        print(f"❌ У пользователя {sid} нет room_id в сессии")
         return
 
     message = {
@@ -246,19 +263,25 @@ async def handle_send_message(sid, data):
         "text": data["text"],
         "timestamp": datetime.now().isoformat(),
     }
+    
+    print(f"💬 Создано сообщение: {message}")
 
     # 👇 сохраняем в истории комнаты
     room_id = session["room_id"]
     if room_id in rooms:
         rooms[room_id]["messages"].append(message)
+        print(f"💾 Сообщение сохранено в истории комнаты {room_id}")
+        print(f"📚 Всего сообщений в комнате: {len(rooms[room_id]['messages'])}")
+    else:
+        print(f"❌ Комната {room_id} не найдена")
 
-    
     # Отправляем сообщение в комнату
     await sio.emit(
         "new_message",
         message,
         room=room_id,
     )
+    print(f"📤 Сообщение отправлено в комнату {room_id}")
 
 # Обработка выхода из комнаты
 @sio.on("leave_room")
